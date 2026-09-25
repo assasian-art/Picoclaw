@@ -34,6 +34,8 @@ ADMIN_PASSWORD = os.getenv('ROUTER_ADMIN_PASSWORD', os.getenv('PICOCLAW_WEBUI_PA
 # gateways can be added through ROUTER_EXTRA_PROVIDERS_JSON.
 BUILTIN_PROVIDERS = [
     ('llm7', '', 'https://api.llm7.io/v1', 113),
+    # Keyless OpenAI-compatible Pollinations text gateway.
+    ('pollinations', '', 'https://text.pollinations.ai/openai', 111),
     ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1', 120),
     ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1', 118),
     ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 117),
@@ -160,10 +162,14 @@ def discover(provider):
         headers = {'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
         if provider.get('key'):
             headers['Authorization'] = 'Bearer ' + provider['key']
-        req = Request(provider['base'] + '/models', headers=headers)
+        models_url = 'https://text.pollinations.ai/models' if provider['id'] == 'pollinations' else provider['base'] + '/models'
+        req = Request(models_url, headers=headers)
         with urlopen(req, timeout=20) as response:
             data = json.loads(response.read().decode('utf-8', 'replace'))
-        rows = [x for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
+        if provider['id'] == 'pollinations' and isinstance(data, list):
+            rows = [{'id': str(x.get('name'))} for x in data if isinstance(x, dict) and x.get('name')]
+        else:
+            rows = [x for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
         if FREE_ONLY and provider['id'] == 'openrouter':
             rows = [x for x in rows if ':free' in str(x.get('id','')).lower() or (
                 isinstance(x.get('pricing'), dict) and
@@ -381,7 +387,8 @@ def post_chat(base, key, model, payload):
     headers = {'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
     if key:
         headers['Authorization'] = 'Bearer ' + key
-    req = Request(base + '/chat/completions', data=raw, method='POST', headers=headers)
+    endpoint = base if base.endswith('/openai') else base + '/chat/completions'
+    req = Request(endpoint, data=raw, method='POST', headers=headers)
     return urlopen(req, timeout=TIMEOUT)
 
 
