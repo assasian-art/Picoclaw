@@ -33,6 +33,7 @@ ADMIN_PASSWORD = os.getenv('ROUTER_ADMIN_PASSWORD', os.getenv('PICOCLAW_WEBUI_PA
 # Common OpenAI-compatible hosted/proxy endpoints. Arbitrary compatible
 # gateways can be added through ROUTER_EXTRA_PROVIDERS_JSON.
 BUILTIN_PROVIDERS = [
+    ('llm7', '', 'https://api.llm7.io/v1', 113),
     ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1', 120),
     ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1', 118),
     ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 117),
@@ -104,6 +105,9 @@ def save_state():
 
 def provider_defs():
     defs = list(BUILTIN_PROVIDERS)
+    headless = os.getenv('HEADLESS_PROVIDER_URL', '').strip().rstrip('/')
+    if headless:
+        defs.append(('headless', '', headless, 112))
     extra = os.getenv('ROUTER_EXTRA_PROVIDERS_JSON', '').strip()
     if extra:
         try:
@@ -120,9 +124,11 @@ def provider_defs():
         merged[pid] = (pid, env, base, pri)
     disabled = set(state.get('disabled_providers', []))
     return [
-        {'id': pid, 'env': env, 'base': base, 'priority': pri, 'key': os.getenv(env, '').strip()}
+        {'id': pid, 'env': env, 'base': base, 'priority': pri,
+         'key': os.getenv(env, '').strip() if env else '',
+         'keyless': not bool(env)}
         for pid, env, base, pri in merged.values()
-        if pid not in disabled and os.getenv(env, '').strip()
+        if pid not in disabled and (not env or os.getenv(env, '').strip())
     ]
 
 
@@ -151,7 +157,10 @@ def score(model_id, priority):
 def discover(provider):
     ps = pstate(provider['id'])
     try:
-        req = Request(provider['base'] + '/models', headers={'Authorization': 'Bearer ' + provider['key'], 'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.0'})
+        headers = {'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
+        if provider.get('key'):
+            headers['Authorization'] = 'Bearer ' + provider['key']
+        req = Request(provider['base'] + '/models', headers=headers)
         with urlopen(req, timeout=20) as response:
             data = json.loads(response.read().decode('utf-8', 'replace'))
         rows = [x for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
@@ -369,12 +378,10 @@ def post_chat(base, key, model, payload):
     body = dict(payload)
     body['model'] = model
     raw = json.dumps(body, ensure_ascii=False).encode('utf-8')
-    req = Request(base + '/chat/completions', data=raw, method='POST', headers={
-        'Authorization': 'Bearer ' + key,
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream, application/json',
-        'User-Agent': 'PicoClaw-ModelRouter/3.0',
-    })
+    headers = {'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
+    if key:
+        headers['Authorization'] = 'Bearer ' + key
+    req = Request(base + '/chat/completions', data=raw, method='POST', headers=headers)
     return urlopen(req, timeout=TIMEOUT)
 
 
@@ -385,7 +392,7 @@ def admin_ok(handler):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'PicoClaw-ModelRouter/3.0'
+    server_version = 'PicoClaw-ModelRouter/3.1'
 
     def log_message(self, fmt, *args):
         print('[Router] ' + fmt % args, flush=True)
