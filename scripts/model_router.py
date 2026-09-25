@@ -378,31 +378,6 @@ def post_chat(base, key, model, payload):
     return urlopen(req, timeout=TIMEOUT)
 
 
-def route(payload):
-    global last_refresh
-    if time.time() - last_refresh > REFRESH:
-        refresh()
-    errors = []
-    for _, provider, model_id in candidates():
-        try:
-            return post_chat(provider['base'], provider['key'], model_id, payload), provider['id'], model_id
-        except HTTPError as e:
-            detail = e.read().decode('utf-8', 'replace')[:180]
-            fail(provider, model_id, e.code, detail)
-            errors.append(f'{provider["id"]}/{model_id}: HTTP {e.code}')
-        except (URLError, TimeoutError, OSError) as e:
-            fail(provider, model_id, 503, str(e)[:100])
-            errors.append(f'{provider["id"]}/{model_id}: network')
-        except Exception as e:
-            fail(provider, model_id, 503, str(e)[:100])
-            errors.append(f'{provider["id"]}/{model_id}: error')
-    try:
-        return post_chat(LOCAL_BASE, 'local', LOCAL_MODEL_ID, payload), 'local', LOCAL_MODEL_ID
-    except Exception as e:
-        errors.append('local/' + LOCAL_MODEL_ID + ': ' + str(e)[:140])
-    raise RuntimeError('No working model route: ' + '; '.join(errors[-10:]))
-
-
 def admin_ok(handler):
     if ADMIN_PASSWORD:
         return handler.headers.get('Authorization', '') == 'Bearer ' + ADMIN_PASSWORD
