@@ -20,6 +20,9 @@ HOST = os.getenv('ROUTER_HOST', '127.0.0.1')
 PORT = int(os.getenv('ROUTER_PORT', '8100'))
 LOCAL_BASE = os.getenv('LOCAL_MODEL_BASE', 'http://127.0.0.1:8000/v1').rstrip('/')
 LOCAL_MODEL_ID = os.getenv('LOCAL_MODEL_ID', 'mobilellm-376m')
+CONFIG_FILE = os.getenv('ROUTER_CONFIG_FILE', '/root/.picoclaw/config.json')
+GATEWAY_RELOAD_URL = os.getenv('ROUTER_GATEWAY_RELOAD_URL', 'http://127.0.0.1:18790/reload')
+FREE_ONLY = os.getenv('ROUTER_FREE_ONLY', 'true').lower() not in ('0','false','no')
 REFRESH = max(30, int(os.getenv('ROUTER_REFRESH_SECONDS', '300')))
 PROBE_EVERY = max(0, int(os.getenv('ROUTER_PROBE_SECONDS', '0')))
 TIMEOUT = max(30, int(os.getenv('ROUTER_TIMEOUT_SECONDS', '180')))
@@ -30,28 +33,28 @@ ADMIN_PASSWORD = os.getenv('ROUTER_ADMIN_PASSWORD', os.getenv('PICOCLAW_WEBUI_PA
 # Common OpenAI-compatible hosted/proxy endpoints. Arbitrary compatible
 # gateways can be added through ROUTER_EXTRA_PROVIDERS_JSON.
 BUILTIN_PROVIDERS = [
-    ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1', 110),
-    ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1', 108),
-    ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 107),
-    ('gemini', 'GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai', 106),
-    ('together', 'TOGETHER_API_KEY', 'https://api.together.xyz/v1', 104),
-    ('fireworks', 'FIREWORKS_API_KEY', 'https://api.fireworks.ai/inference/v1', 103),
-    ('xai', 'XAI_API_KEY', 'https://api.x.ai/v1', 102),
-    ('mistral', 'MISTRAL_API_KEY', 'https://api.mistral.ai/v1', 101),
-    ('deepseek', 'DEEPSEEK_API_KEY', 'https://api.deepseek.com/v1', 100),
-    ('openai', 'OPENAI_API_KEY', 'https://api.openai.com/v1', 99),
-    ('zhipu', 'ZHIPU_API_KEY', 'https://open.bigmodel.cn/api/paas/v4', 98),
-    ('qwen', 'QWEN_API_KEY', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 97),
-    ('moonshot', 'MOONSHOT_API_KEY', 'https://api.moonshot.ai/v1', 96),
-    ('minimax', 'MINIMAX_API_KEY', 'https://api.minimax.io/v1', 95),
-    ('nvidia', 'NVIDIA_API_KEY', 'https://integrate.api.nvidia.com/v1', 94),
-    ('venice', 'VENICE_API_KEY', 'https://api.venice.ai/api/v1', 93),
-    ('huggingface', 'HF_TOKEN', 'https://router.huggingface.co/v1', 92),
-    ('cohere', 'COHERE_API_KEY', 'https://api.cohere.ai/compatibility/v1', 91),
-    ('vivgrid', 'VIVGRID_API_KEY', 'https://api.vivgrid.com/v1', 90),
-    ('longcat', 'LONGCAT_API_KEY', 'https://api.longcat.chat/openai', 89),
-    ('modelscope', 'MODELSCOPE_API_KEY', 'https://api-inference.modelscope.cn/v1', 88),
-    ('byteplus', 'BYTEPLUS_API_KEY', 'https://ark.ap-southeast.bytepluses.com/api/v3', 87),
+    ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1', 120),
+    ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1', 118),
+    ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 117),
+    ('longcat', 'LONGCAT_API_KEY', 'https://api.longcat.chat/openai', 116),
+    ('modelscope', 'MODELSCOPE_API_KEY', 'https://api-inference.modelscope.cn/v1', 115),
+    ('zhipu', 'ZHIPU_API_KEY', 'https://open.bigmodel.cn/api/paas/v4', 114),
+    ('gemini', 'GEMINI_API_KEY', 'https://generativelanguage.googleapis.com/v1beta/openai', 100),
+    ('together', 'TOGETHER_API_KEY', 'https://api.together.xyz/v1', 99),
+    ('fireworks', 'FIREWORKS_API_KEY', 'https://api.fireworks.ai/inference/v1', 98),
+    ('xai', 'XAI_API_KEY', 'https://api.x.ai/v1', 97),
+    ('mistral', 'MISTRAL_API_KEY', 'https://api.mistral.ai/v1', 96),
+    ('deepseek', 'DEEPSEEK_API_KEY', 'https://api.deepseek.com/v1', 95),
+    ('openai', 'OPENAI_API_KEY', 'https://api.openai.com/v1', 94),
+    ('qwen', 'QWEN_API_KEY', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 93),
+    ('moonshot', 'MOONSHOT_API_KEY', 'https://api.moonshot.ai/v1', 92),
+    ('minimax', 'MINIMAX_API_KEY', 'https://api.minimax.io/v1', 91),
+    ('nvidia', 'NVIDIA_API_KEY', 'https://integrate.api.nvidia.com/v1', 90),
+    ('venice', 'VENICE_API_KEY', 'https://api.venice.ai/api/v1', 89),
+    ('huggingface', 'HF_TOKEN', 'https://router.huggingface.co/v1', 88),
+    ('vivgrid', 'VIVGRID_API_KEY', 'https://api.vivgrid.com/v1', 87),
+    ('byteplus', 'BYTEPLUS_API_KEY', 'https://ark.ap-southeast.bytepluses.com/api/v3', 86),
+    ('nearai', 'NEARAI_API_KEY', 'https://cloud-api.near.ai/v1', 85),
 ]
 BAD_MODEL_WORDS = ('embedding', 'embed', 'moderation', 'rerank', 'tts', 'speech', 'whisper', 'audio', 'image', 'vision-encoder')
 PATTERNS = [
@@ -151,9 +154,16 @@ def discover(provider):
         req = Request(provider['base'] + '/models', headers={'Authorization': 'Bearer ' + provider['key'], 'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.0'})
         with urlopen(req, timeout=20) as response:
             data = json.loads(response.read().decode('utf-8', 'replace'))
-        ids = [str(x['id']) for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
+        rows = [x for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
+        if FREE_ONLY and provider['id'] == 'openrouter':
+            rows = [x for x in rows if ':free' in str(x.get('id','')).lower() or (
+                isinstance(x.get('pricing'), dict) and
+                str(x['pricing'].get('prompt','')) in ('0','0.0','0.000000') and
+                str(x['pricing'].get('completion','')) in ('0','0.0','0.000000')
+            )]
+        ids = [str(x['id']) for x in rows]
         old = ps.get('models', {})
-        ps['models'] = {mid: old.get(mid, {'cooldown': 0, 'failures': 0, 'last_ok': 0, 'score': score(mid, provider['priority'])}) for mid in ids}
+        ps['models'] = {mid: old.get(mid, {'cooldown': 0, 'failures': 0, 'last_ok': 0, 'score': score(mid, provider['priority']), 'disabled': False}) for mid in ids}
         for mid in ids:
             ps['models'][mid]['score'] = score(mid, provider['priority'])
         ps['ok'] = True
@@ -176,28 +186,144 @@ def refresh():
     for provider in providers:
         discover(provider)
     last_refresh = time.time()
+    sync_config()
     print('[Router] active providers: ' + (', '.join(p['id'] for p in providers) if providers else 'none'), flush=True)
+
+
+def discovered_models():
+    out = []
+    for provider in provider_defs():
+        ps = pstate(provider['id'])
+        for mid, ms in ps.get('models', {}).items():
+            out.append((provider, mid, ms))
+    return out
 
 
 def candidates():
     now = time.time()
     disabled = set(state.get('disabled_models', []))
     out = []
-    for provider in provider_defs():
-        ps = pstate(provider['id'])
-        if ps.get('cooldown', 0) > now:
+    for provider, mid, ms in discovered_models():
+        key = f'{provider["id"]}/{mid}'
+        if key in disabled or ms.get('disabled', False):
             continue
-        for mid, ms in ps.get('models', {}).items():
-            key = f'{provider["id"]}/{mid}'
-            if key in disabled or ms.get('cooldown', 0) > now:
-                continue
-            value = ms.get('score', score(mid, provider['priority']))
-            if value < 0:
-                continue
-            value -= min(ms.get('failures', 0) * 12, 60)
-            out.append((value, provider, mid))
+        if pstate(provider['id']).get('cooldown', 0) > now or ms.get('cooldown', 0) > now:
+            continue
+        value = ms.get('score', score(mid, provider['priority']))
+        if value < 0:
+            continue
+        value -= min(ms.get('failures', 0) * 12, 60)
+        out.append((value, provider, mid))
     out.sort(key=lambda x: x[0], reverse=True)
     return out
+
+
+def catalog_models():
+    rows = [{'id': 'auto', 'object': 'model', 'owned_by': 'picoclaw-router'},
+            {'id': f'local/{LOCAL_MODEL_ID}', 'object': 'model', 'owned_by': 'local'}]
+    disabled = set(state.get('disabled_models', []))
+    for provider, mid, ms in discovered_models():
+        name = f'{provider["id"]}/{mid}'
+        rows.append({'id': name, 'object': 'model', 'owned_by': provider['id'],
+                     'disabled': bool(ms.get('disabled', False) or name in disabled),
+                     'cooldown_until': ms.get('cooldown', 0),
+                     'failures': ms.get('failures', 0)})
+    return rows
+
+
+def sync_config():
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        old = cfg.get('model_list', [])
+        managed = {
+            'auto': {'model_name':'auto','provider':'openai','model':'auto',
+                     'api_base':f'http://{HOST}:{PORT}/v1','api_keys':['router'],
+                     'request_timeout':TIMEOUT,'enabled':True},
+            f'local/{LOCAL_MODEL_ID}': {'model_name':f'local/{LOCAL_MODEL_ID}','provider':'openai',
+                     'model':f'local/{LOCAL_MODEL_ID}','api_base':f'http://{HOST}:{PORT}/v1',
+                     'api_keys':['router'],'request_timeout':TIMEOUT,'enabled':True}
+        }
+        disabled=set(state.get('disabled_models', []))
+        for provider, mid, ms in discovered_models():
+            name=f'{provider["id"]}/{mid}'
+            managed[name]={'model_name':name,'provider':'openai','model':name,
+                           'api_base':f'http://{HOST}:{PORT}/v1','api_keys':['router'],
+                           'request_timeout':TIMEOUT,
+                           'enabled':not (ms.get('disabled',False) or name in disabled)}
+        result=[]
+        for x in old:
+            n=str(x.get('model_name','')) if isinstance(x,dict) else ''
+            if n in managed or (isinstance(x,dict) and x.get('api_base')==f'http://{HOST}:{PORT}/v1'):
+                continue
+            if isinstance(x,dict) and x.get('model_name'): result.append(x)
+        result.extend(managed.values())
+        cfg['model_list']=result
+        cfg.setdefault('agents',{}).setdefault('defaults',{})['model_name']='auto'
+        raw=json.dumps(cfg,ensure_ascii=False,indent=2)+'\n'
+        with open(CONFIG_FILE,'r',encoding='utf-8') as f: current=f.read()
+        if raw != current:
+            tmp=CONFIG_FILE+'.router.tmp'
+            with open(tmp,'w',encoding='utf-8') as f: f.write(raw)
+            os.replace(tmp,CONFIG_FILE)
+            try:
+                req=Request(GATEWAY_RELOAD_URL,data=b'',method='POST')
+                with urlopen(req,timeout=5) as response: response.read(256)
+                print('[Router] config synced + gateway reload requested',flush=True)
+            except Exception as e:
+                print('[Router] config synced; reload deferred:',str(e)[:160],flush=True)
+    except Exception as e:
+        print('[Router] config sync error:',str(e)[:240],flush=True)
+
+
+def resolve_requested_model(payload):
+    requested=str(payload.get('model','')).strip()
+    if not requested or requested=='auto': return None
+    if requested in (LOCAL_MODEL_ID,f'local/{LOCAL_MODEL_ID}'):
+        return ('local',LOCAL_MODEL_ID)
+    if '/' in requested:
+        return tuple(requested.split('/',1))
+    for provider,mid,_ in discovered_models():
+        if requested==mid: return (provider['id'],mid)
+    return None
+
+
+def route(payload):
+    global last_refresh
+    if time.time()-last_refresh > REFRESH: refresh()
+    errors=[]
+    requested=resolve_requested_model(payload)
+    if requested:
+        pid,mid=requested
+        if pid=='local':
+            return post_chat(LOCAL_BASE,'local',mid,payload),'local',mid
+        provider=next((p for p in provider_defs() if p['id']==pid),None)
+        if provider:
+            ms=pstate(pid).get('models',{}).get(mid,{})
+            if not ms.get('disabled',False) and ms.get('cooldown',0)<=time.time():
+                try:
+                    return post_chat(provider['base'],provider['key'],mid,payload),pid,mid
+                except HTTPError as e:
+                    fail(provider,mid,e.code,e.read().decode('utf-8','replace')[:180])
+                    errors.append(f'{pid}/{mid}: HTTP {e.code}')
+                except Exception as e:
+                    fail(provider,mid,503,str(e)[:120]); errors.append(f'{pid}/{mid}: error')
+        errors.append(f'{pid}/{mid}: unavailable')
+    for _,provider,model_id in candidates():
+        try:
+            return post_chat(provider['base'],provider['key'],model_id,payload),provider['id'],model_id
+        except HTTPError as e:
+            detail=e.read().decode('utf-8','replace')[:180]
+            fail(provider,model_id,e.code,detail); errors.append(f'{provider["id"]}/{model_id}: HTTP {e.code}')
+        except (URLError,TimeoutError,OSError) as e:
+            fail(provider,model_id,503,str(e)[:100]); errors.append(f'{provider["id"]}/{model_id}: network')
+        except Exception as e:
+            fail(provider,model_id,503,str(e)[:100]); errors.append(f'{provider["id"]}/{model_id}: error')
+    try:
+        return post_chat(LOCAL_BASE,'local',LOCAL_MODEL_ID,payload),'local',LOCAL_MODEL_ID
+    except Exception as e:
+        errors.append('local/'+LOCAL_MODEL_ID+': '+str(e)[:140])
+    raise RuntimeError('No working model route: '+'; '.join(errors[-10:]))
 
 
 def fail(provider, model_id, status, detail=''):
@@ -214,6 +340,11 @@ def fail(provider, model_id, status, detail=''):
     ms = ps['models'].setdefault(model_id, {'cooldown': 0, 'failures': 0, 'last_ok': 0, 'score': score(model_id, provider['priority'])})
     ms['failures'] = ms.get('failures', 0) + 1
     ms['cooldown'] = now + cooldown
+    if status in (400,404,422) and ms['failures'] >= 3:
+        ms['disabled'] = True
+        state.setdefault('disabled_models', [])
+        key=provider['id']+'/'+model_id
+        if key not in state['disabled_models']: state['disabled_models'].append(key)
     ps['last_error'] = f'HTTP {status}: {detail}'[:300]
     if status in (401, 403, 429):
         ps['cooldown'] = now + cooldown
@@ -226,6 +357,8 @@ def success(provider, model_id):
     ms['last_ok'] = time.time()
     ms['failures'] = max(0, ms.get('failures', 0) - 1)
     ms['cooldown'] = 0
+    ms['disabled'] = False
+    state['disabled_models']=[x for x in state.get('disabled_models',[]) if x != provider['id']+'/'+model_id]
     ps['cooldown'] = 0
     ps['ok'] = True
     ps['last_error'] = ''
@@ -301,9 +434,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith('/v1/models'):
             if time.time() - last_refresh > REFRESH:
                 refresh()
-            data = [{'id': LOCAL_MODEL_ID, 'object': 'model', 'owned_by': 'mobilellm'}]
-            data += [{'id': f'{p["id"]}/{mid}', 'object': 'model', 'owned_by': p['id']} for _, p, mid in candidates()]
-            self.send_json(200, {'object': 'list', 'data': data})
+            self.send_json(200, {'object':'list','data':catalog_models()})
             return
         if self.path == '/admin/status':
             if not admin_ok(self):
@@ -311,7 +442,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with lock:
                 snapshot = json.loads(json.dumps(state))
-            self.send_json(200, {'local_model': LOCAL_MODEL_ID, 'active_providers': [p['id'] for p in provider_defs()], 'candidates': [{'provider': p['id'], 'model': mid, 'score': s} for s, p, mid in candidates()[:100]], 'state': snapshot})
+            self.send_json(200, {'local_model': LOCAL_MODEL_ID, 'active_providers': [p['id'] for p in provider_defs()], 'candidates': [{'provider': p['id'], 'model': mid, 'score': s} for s, p, mid in candidates()[:100]], 'catalog': catalog_models(), 'state': snapshot})
             return
         self.send_json(404, {'error': 'not_found'})
 
