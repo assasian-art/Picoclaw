@@ -27,7 +27,10 @@ cp "${CONFIG_SOURCE}" "${CONFIG_PATH}"
 export PICOCLAW_BINARY="/app/picoclaw"
 export LOCAL_MODEL_ID="smollm2-135m"
 export ROUTER_CONFIG_FILE="${CONFIG_PATH}"
+export GATEWAY_RELOAD_TOKEN="${PICOCLAW_GATEWAY_TOKEN:-picoclaw-internal-reload}"
 export ROUTER_GATEWAY_RELOAD_URL="http://127.0.0.1:18790/reload"
+export ROUTER_GATEWAY_RELOAD_TOKEN="${GATEWAY_RELOAD_TOKEN}"
+export PICOCLAW_GATEWAY_TOKEN="${GATEWAY_RELOAD_TOKEN}"
 export ROUTER_FREE_ONLY="true"
 
 printf '%s\n' '--- binaries ---'
