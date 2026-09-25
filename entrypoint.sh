@@ -7,6 +7,7 @@ MODEL_PORT="${LOCAL_MODEL_PORT:-8000}"
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
 ROUTER_PORT="${ROUTER_PORT:-8100}"
 CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-${TUNNEL_TOKEN:-}}"
+CLOUDFLARE_QUICK_TUNNEL="${CLOUDFLARE_QUICK_TUNNEL:-true}"
 MODEL_PATH="/app/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
 PICO_HOME="/root/.picoclaw"
 CONFIG_SOURCE="/config/config.json"
@@ -75,7 +76,22 @@ done
 echo 'Model router: healthy'
 
 CLOUDFLARE_PID=""
-if [ -n "${CLOUDFLARE_TUNNEL_TOKEN}" ]; then
+if [ "${CLOUDFLARE_QUICK_TUNNEL}" = "true" ] || [ "${CLOUDFLARE_QUICK_TUNNEL}" = "1" ]; then
+    echo 'Starting Cloudflare Quick Tunnel (tokenless)...'
+    (
+        while :; do
+            cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${PORT}" 2>&1 | while IFS= read -r line; do
+                echo "[Cloudflare Quick Tunnel] ${line}"
+                case "${line}" in
+                    *trycloudflare.com*) echo "PUBLIC_QUICK_TUNNEL_URL=$(printf '%s' "${line}" | grep -Eo 'https://[^ ]*trycloudflare\.com' | head -n1 || true)" ;;
+                esac
+            done
+            echo 'Cloudflare Quick Tunnel exited; restarting in 5s...' >&2
+            sleep 5
+        done
+    ) &
+    CLOUDFLARE_PID=$!
+elif [ -n "${CLOUDFLARE_TUNNEL_TOKEN}" ]; then
     echo 'Starting Cloudflare named tunnel...'
     (
         while :; do
@@ -86,7 +102,7 @@ if [ -n "${CLOUDFLARE_TUNNEL_TOKEN}" ]; then
     ) &
     CLOUDFLARE_PID=$!
 else
-    echo 'Cloudflare Tunnel: disabled (set CLOUDFLARE_TUNNEL_TOKEN or TUNNEL_TOKEN to enable)'
+    echo 'Cloudflare Tunnel: disabled'
 fi
 
 /app/scripts/auth_bootstrap.sh &
