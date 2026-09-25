@@ -6,7 +6,7 @@ MODEL_HOST="${LOCAL_MODEL_HOST:-127.0.0.1}"
 MODEL_PORT="${LOCAL_MODEL_PORT:-8000}"
 ROUTER_HOST="${ROUTER_HOST:-127.0.0.1}"
 ROUTER_PORT="${ROUTER_PORT:-8100}"
-CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-}"
+CLOUDFLARE_TUNNEL_TOKEN="${CLOUDFLARE_TUNNEL_TOKEN:-${TUNNEL_TOKEN:-}}"
 MODEL_PATH="/app/models/SmolLM2-135M-Instruct-Q4_K_M.gguf"
 PICO_HOME="/root/.picoclaw"
 CONFIG_SOURCE="/config/config.json"
@@ -77,10 +77,16 @@ echo 'Model router: healthy'
 CLOUDFLARE_PID=""
 if [ -n "${CLOUDFLARE_TUNNEL_TOKEN}" ]; then
     echo 'Starting Cloudflare named tunnel...'
-    cloudflared tunnel --no-autoupdate run --token "${CLOUDFLARE_TUNNEL_TOKEN}" &
+    (
+        while :; do
+            cloudflared tunnel --no-autoupdate run --token "${CLOUDFLARE_TUNNEL_TOKEN}" || true
+            echo 'Cloudflare Tunnel exited; restarting in 5s...' >&2
+            sleep 5
+        done
+    ) &
     CLOUDFLARE_PID=$!
 else
-    echo 'Cloudflare Tunnel: disabled (set CLOUDFLARE_TUNNEL_TOKEN to enable)'
+    echo 'Cloudflare Tunnel: disabled (set CLOUDFLARE_TUNNEL_TOKEN or TUNNEL_TOKEN to enable)'
 fi
 
 /app/scripts/auth_bootstrap.sh &
