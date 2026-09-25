@@ -9,14 +9,23 @@
       "temperature": 0.4,
       "max_tool_iterations": 6,
       "max_parallel_turns": 1,
-      "model_name": "smollm2-135m"
+      "model_name": "auto"
     }
   },
   "model_list": [
     {
-      "model_name": "smollm2-135m",
+      "model_name": "auto",
       "provider": "openai",
-      "model": "smollm2-135m",
+      "model": "auto",
+      "api_base": "http://127.0.0.1:8100/v1",
+      "api_keys": ["local-router"],
+      "request_timeout": 300,
+      "enabled": true
+    },
+    {
+      "model_name": "local/smollm2-135m",
+      "provider": "openai",
+      "model": "local/smollm2-135m",
       "api_base": "http://127.0.0.1:8100/v1",
       "api_keys": ["local-router"],
       "request_timeout": 300,
