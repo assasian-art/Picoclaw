@@ -33,9 +33,12 @@ ADMIN_PASSWORD = os.getenv('ROUTER_ADMIN_PASSWORD', os.getenv('PICOCLAW_WEBUI_PA
 # Common OpenAI-compatible hosted/proxy endpoints. Arbitrary compatible
 # gateways can be added through ROUTER_EXTRA_PROVIDERS_JSON.
 BUILTIN_PROVIDERS = [
+    # Keyless / headless OpenAI-compatible gateways.
     ('llm7', '', 'https://api.llm7.io/v1', 113),
-    # Keyless OpenAI-compatible Pollinations text gateway.
-    ('pollinations', '', 'https://text.pollinations.ai/openai', 111),
+    ('pollinations', '', 'https://text.pollinations.ai/openai', 112),
+    ('persorai', '', 'https://persorai.com/v1', 111),
+    ('vireonix', '', 'https://vireonix.ai/v1', 110),
+    ('blockrun-free', '', 'https://blockrun.ai/api/v1', 109),
     ('openrouter', 'OPENROUTER_API_KEY', 'https://openrouter.ai/api/v1', 120),
     ('groq', 'GROQ_API_KEY', 'https://api.groq.com/openai/v1', 118),
     ('cerebras', 'CEREBRAS_API_KEY', 'https://api.cerebras.ai/v1', 117),
@@ -159,9 +162,13 @@ def score(model_id, priority):
 def discover(provider):
     ps = pstate(provider['id'])
     try:
-        headers = {'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
+        headers = {'Accept': 'application/json', 'User-Agent': 'PicoClaw-ModelRouter/4.0'}
         if provider.get('key'):
             headers['Authorization'] = 'Bearer ' + provider['key']
+        elif provider['id'] == 'llm7':
+            headers['Authorization'] = 'Bearer unused'
+        elif provider['id'] == 'persorai':
+            headers['Authorization'] = 'Bearer picoclaw-public'
         models_url = 'https://text.pollinations.ai/models' if provider['id'] == 'pollinations' else provider['base'] + '/models'
         req = Request(models_url, headers=headers)
         with urlopen(req, timeout=20) as response:
@@ -170,12 +177,19 @@ def discover(provider):
             rows = [{'id': str(x.get('name'))} for x in data if isinstance(x, dict) and x.get('name')]
         else:
             rows = [x for x in data.get('data', []) if isinstance(x, dict) and x.get('id')]
-        if FREE_ONLY and provider['id'] == 'openrouter':
-            rows = [x for x in rows if ':free' in str(x.get('id','')).lower() or (
-                isinstance(x.get('pricing'), dict) and
-                str(x['pricing'].get('prompt','')) in ('0','0.0','0.000000') and
-                str(x['pricing'].get('completion','')) in ('0','0.0','0.000000')
-            )]
+        if FREE_ONLY:
+            if provider['id'] == 'openrouter':
+                rows = [x for x in rows if ':free' in str(x.get('id','')).lower() or (
+                    isinstance(x.get('pricing'), dict) and
+                    str(x['pricing'].get('prompt','')) in ('0','0.0','0.000000') and
+                    str(x['pricing'].get('completion','')) in ('0','0.0','0.000000')
+                )]
+            elif provider['id'] == 'blockrun-free':
+                rows = [x for x in rows if str(x.get('billing_mode','')).lower() == 'free' or (
+                    isinstance(x.get('pricing'), dict) and
+                    str(x['pricing'].get('input','')) in ('0','0.0') and
+                    str(x['pricing'].get('output','')) in ('0','0.0')
+                )]
         ids = [str(x['id']) for x in rows]
         old = ps.get('models', {})
         ps['models'] = {mid: old.get(mid, {'cooldown': 0, 'failures': 0, 'last_ok': 0, 'score': score(mid, provider['priority']), 'disabled': False}) for mid in ids}
@@ -384,9 +398,13 @@ def post_chat(base, key, model, payload):
     body = dict(payload)
     body['model'] = model
     raw = json.dumps(body, ensure_ascii=False).encode('utf-8')
-    headers = {'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json', 'User-Agent': 'PicoClaw-ModelRouter/3.1'}
+    headers = {'Content-Type': 'application/json', 'Accept': 'text/event-stream, application/json', 'User-Agent': 'PicoClaw-ModelRouter/4.0'}
     if key:
         headers['Authorization'] = 'Bearer ' + key
+    elif base.startswith('https://api.llm7.io/'):
+        headers['Authorization'] = 'Bearer unused'
+    elif base.startswith('https://persorai.com/'):
+        headers['Authorization'] = 'Bearer picoclaw-public'
     endpoint = base if base.endswith('/openai') else base + '/chat/completions'
     req = Request(endpoint, data=raw, method='POST', headers=headers)
     return urlopen(req, timeout=TIMEOUT)
