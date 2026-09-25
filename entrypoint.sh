@@ -24,6 +24,9 @@ cp "${CONFIG_SOURCE}" "${CONFIG_PATH}"
 
 export PICOCLAW_BINARY="/app/picoclaw"
 export LOCAL_MODEL_ID="smollm2-135m"
+export ROUTER_CONFIG_FILE="${CONFIG_PATH}"
+export ROUTER_GATEWAY_RELOAD_URL="http://127.0.0.1:18790/reload"
+export ROUTER_FREE_ONLY="true"
 
 printf '%s\n' '--- binaries ---'
 ls -lh /app/picoclaw /app/picoclaw-launcher /app/llama-server
