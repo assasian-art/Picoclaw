@@ -88,6 +88,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tzdata libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Optional Cloudflare Tunnel connector. Dormant unless a tunnel token is configured.
+RUN curl -fsSL --retry 5 --retry-all-errors \
+    -o /usr/local/bin/cloudflared \
+    https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+    && chmod +x /usr/local/bin/cloudflared \
+    && cloudflared --version
+
 WORKDIR /app
 ENV LD_LIBRARY_PATH="/app/llama-bin"
 
