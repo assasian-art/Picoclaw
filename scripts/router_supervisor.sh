@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 while :; do
-    echo '[Router-Supervisor] starting MobileLLM-aware model router'
-    if python3 /app/scripts/router_server.py; then
+    echo '[Router-Supervisor] starting dynamic free-model router'
+    if python3 /app/scripts/model_router.py; then
         status=0
     else
         status=$?
