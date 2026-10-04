@@ -101,12 +101,32 @@ async function refresh(s){
  const d=await r.json().catch(()=>({}));if(!r.ok)throw Error("OAuth refresh failed: "+r.status+" "+JSON.stringify(d));
  s.access_token=d.access_token;s.refresh_token=d.refresh_token||s.refresh_token;s.expires_at=Date.now()+Number(d.expires_in||7200)*1000;return s;
 }
+async function tokenInfo(s){
+ if(s.expires_at<Date.now()+60000)await refresh(s);
+ const r=await fetch((s.gitlab_base||GITLAB_BASE)+"/oauth/token/info",{headers:{authorization:"Bearer "+s.access_token,accept:"application/json"}});
+ const d=await r.json().catch(()=>({}));
+ return {status:r.status,ok:r.ok,data:d};
+}
 async function direct(s){
  const cached=directCache.get(s.id);if(cached&&cached.expires_at>Date.now()+30000)return cached;
  if(s.expires_at<Date.now()+60000)await refresh(s);
- const r=await fetch((s.gitlab_base||GITLAB_BASE)+"/api/v4/ai/third_party_agents/direct_access",{method:"POST",headers:{authorization:"Bearer "+s.access_token,"content-type":"application/json",accept:"application/json"},body:null});
- const d=await r.json().catch(()=>({}));if(!r.ok||!d.token)throw Error("GitLab Duo direct-access failed: "+r.status+" "+JSON.stringify(d));
- const x={token:d.token,headers:d.headers||{},expires_at:Date.now()+25*60*1000};directCache.set(s.id,x);return x;
+ const base=(s.gitlab_base||GITLAB_BASE).replace(/\/$/,"");
+ // GitLab's third-party-agent endpoint expects the same minimal POST used by Claude Code.
+ // Do not send a JSON content-type or request body: GitLab treats this as a body-less token request.
+ const r=await fetch(base+"/api/v4/ai/third_party_agents/direct_access",{
+   method:"POST",
+   headers:{authorization:"Bearer "+s.access_token,accept:"application/json"}
+ });
+ const raw=await r.text();
+ let d;try{d=raw?JSON.parse(raw):{}}catch{d={raw}};
+ if(!r.ok||!d.token){
+   const info=await tokenInfo(s).catch(()=>null);
+   const safe={status:r.status,upstream:d,oauth:info?{status:info.status,ok:info.ok,scopes:info.data?.scope||info.data?.scopes||null,expires_in_seconds:info.data?.expires_in||null}:null};
+   throw Error("GitLab Duo direct-access failed: "+JSON.stringify(safe));
+ }
+ const exp=Number(d.expires_at);
+ const expires_at=Number.isFinite(exp)&&exp>0?(exp*1000):Date.now()+25*60*1000;
+ const x={token:d.token,headers:d.headers||{},expires_at};directCache.set(s.id,x);return x;
 }
 async function auth(req){
  const c=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");if(!c)return null;
@@ -168,7 +188,7 @@ const server=http.createServer(async(req,res)=>{
 if(u.pathname==="/api/status"&&req.method==="GET"){const s=await sessionFromRequest(req);return send(res,200,{configured:configured(),oauthConfigured:!!(CLIENT_ID&&CLIENT_SECRET),gatewayConfigured:!!GATEWAY_SECRET,connected:!!s,base_url:publicUrl(req),callback:redirectUri(req)});}
   if(u.pathname==="/api/models/import"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"GitLab Duo is not connected. Connect GitLab first."});const data=await importGitLabModels(s);return send(res,200,{ok:true,data,default_model:s.default_model,source:"gitlab-graphql"});}
   if(u.pathname==="/api/credential"&&req.method==="GET"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"GitLab Duo is not connected. Connect GitLab first."});const c=getCookie(req,"duo_session")||encrypt(s);return send(res,200,{credential:c,base_url:publicUrl(req),messages_url:publicUrl(req)+"/v1/messages",models:modelsFor(s)});}
-  if(u.pathname==="/api/test"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"Connect GitLab before testing."});if(!modelsFor(s).length)await importGitLabModels(s);const testModel=s.default_model||modelsFor(s)[0]?.id;if(!testModel)return send(res,502,{error:"GitLab returned no usable Claude model."});await directAccess(s);const d=await anthropicRequest(s,{model:testModel,max_tokens:1,messages:[{role:"user",content:"ping"}]},false);if(d.status<200||d.status>=300)return send(res,502,{error:"GitLab Duo direct access works, but the Claude Messages test failed ("+d.status+").",details:d.data});return send(res,200,{ok:true,message:"OAuth, GitLab Duo direct access, AI Gateway and Claude Messages API are all working.",model:testModel,preview:textFromAnthropic(d.data).slice(0,80)||"response received"});}
+  if(u.pathname==="/api/test"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"Connect GitLab before testing."});const info=await tokenInfo(s).catch(e=>({status:0,ok:false,data:{error:String(e?.message||e)}}));if(!modelsFor(s).length)await importGitLabModels(s);const testModel=s.default_model||modelsFor(s)[0]?.id;if(!testModel)return send(res,502,{error:"GitLab returned no usable Claude model."});let da;try{da=await directAccess(s)}catch(e){return send(res,502,{error:String(e?.message||e),stage:"gitlab_direct_access",oauth:{status:info.status,ok:info.ok,scopes:info.data?.scope||info.data?.scopes||null,expires_in_seconds:info.data?.expires_in||null}})}const d=await anthropicRequest(s,{model:testModel,max_tokens:1,messages:[{role:"user",content:"ping"}]},false);if(d.status<200||d.status>=300)return send(res,502,{error:"GitLab Duo direct access works, but the Claude Messages test failed ("+d.status+").",details:d.data});return send(res,200,{ok:true,message:"OAuth, GitLab Duo direct access, AI Gateway and Claude Messages API are all working.",model:testModel,preview:textFromAnthropic(d.data).slice(0,80)||"response received",direct_access_expires_at:da.expires_at,oauth:{status:info.status,scopes:info.data?.scope||info.data?.scopes||null}});}
   if(u.pathname==="/api/playground"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"Connect GitLab first."});let p;try{p=JSON.parse((await readBody(req)).toString())}catch{return send(res,400,{error:"Invalid JSON"})}const allowed=modelIds(s);const model=allowed.includes(String(p.model||""))?String(p.model):"";if(!model)return send(res,400,{error:"Model is not imported from your GitLab Duo catalog. Click Import from GitLab first."});const prompt=String(p.prompt||"").trim();if(!prompt)return send(res,400,{error:"Prompt is empty"});const d=await anthropicRequest(s,{model,max_tokens:1024,messages:[{role:"user",content:prompt}]},false);if(d.status<200||d.status>=300)return send(res,d.status,{error:"GitLab Duo request failed",details:d.data});return send(res,200,{ok:true,model,text:textFromAnthropic(d.data),raw:d.data});}
   if(u.pathname==="/oauth/reauthorize"){sessions.delete(getCookie(req,"duo_session"));res.setHeader("set-cookie",[cookie("duo_session","",0),cookie("oauth_state","",0)]);return res.writeHead(302,{location:"/oauth/start"}),res.end()}
   if(u.pathname==="/oauth/start"){const rc=runtimeConfig(req);if(!rc.client_id||!rc.client_secret)return send(res,400,{error:"Enter GitLab Application ID and Client Secret first."});const st=random(24),a=new URL(rc.gitlab_base+"/oauth/authorize");a.searchParams.set("client_id",rc.client_id);a.searchParams.set("redirect_uri",redirectUri(req));a.searchParams.set("response_type","code");a.searchParams.set("state",st);a.searchParams.set("scope","api ai_features");res.writeHead(302,{location:a.toString(),"set-cookie":cookie("oauth_state",signedState(st),600)});return res.end()}
