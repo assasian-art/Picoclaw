@@ -42,24 +42,35 @@ function runtimeConfig(req){try{const raw=getCookie(req,"duo_config");if(raw)ret
 function configured(){const c=runtimeConfig({headers:{cookie:""}});return !!(c.client_id&&c.client_secret&&GATEWAY_SECRET)}
 async function directAccess(s){return direct(s)}
 async function importGitLabModels(s){
-  const q={query:"query { aiChatAvailableModels { defaultModel { ref name modelProvider modelDescription } selectableModels { ref name modelProvider modelDescription } } }"};
-  const r=await fetch(s.gitlab_base+"/api/graphql",{method:"POST",headers:{authorization:"Bearer "+s.access_token,"content-type":"application/json",accept:"application/json"},body:JSON.stringify(q)});
-  const d=await r.json().catch(()=>({}));
-  if(!r.ok||d.errors?.length) throw Error("GitLab model discovery failed: "+r.status+" "+JSON.stringify(d.errors||d));
-  const a=d?.data?.aiChatAvailableModels;
-  if(!a) throw Error("GitLab did not return Duo model catalog.");
-  const rows=[...(a.selectableModels||[]),...(a.defaultModel?[a.defaultModel]:[])];
-  const seen=new Set(), models=[];
-  for(const x of rows){
-    const ref=String(x?.ref||"").trim(), provider=String(x?.modelProvider||"").trim(), name=String(x?.name||"").trim();
-    if(!ref||seen.has(ref)) continue;
-    if(!/anthropic/i.test(provider)&&!/claude/i.test(name)&&!/claude/i.test(ref)) continue;
-    seen.add(ref);
-    models.push({id:ref,name:name||ref,provider:provider||"Anthropic",description:String(x?.modelDescription||"")});
+  if(s.expires_at<Date.now()+60000) await refresh(s);
+  const auth={authorization:"Bearer "+s.access_token,accept:"application/json"};
+  const nsr=await fetch((s.gitlab_base||GITLAB_BASE)+"/api/v4/namespaces?top_level_only=true&per_page=100",{headers:auth});
+  const namespaces=await nsr.json().catch(()=>[]);
+  if(!nsr.ok) throw Error("GitLab namespace discovery failed: "+nsr.status+" "+JSON.stringify(namespaces));
+  const groups=(Array.isArray(namespaces)?namespaces:[]).filter(x=>String(x?.kind||"")==="group"&&x?.id);
+  const targets=groups.length?groups:[];
+  if(!targets.length) throw Error("No GitLab Duo namespace was found for this account. Your GitLab Duo subscription must be attached to a group/namespace.");
+  const query="query($namespaceId: GroupID){ aiChatAvailableModels(namespaceId:$namespaceId){ defaultModel { ref name modelProvider modelDescription } selectableModels { ref name modelProvider modelDescription } pinnedModel { ref name modelProvider modelDescription } } }";
+  const seen=new Set(),models=[];
+  for(const g of targets){
+    const gid="gid://gitlab/Group/"+g.id;
+    const r=await fetch((s.gitlab_base||GITLAB_BASE)+"/api/graphql",{method:"POST",headers:{...auth,"content-type":"application/json"},body:JSON.stringify({query,variables:{namespaceId:gid}})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||d.errors?.length) continue;
+    const cat=d?.data?.aiChatAvailableModels;
+    if(!cat) continue;
+    const rows=[...(cat.selectableModels||[]),...(cat.defaultModel?[cat.defaultModel]:[]),...(cat.pinnedModel?[cat.pinnedModel]:[])];
+    for(const x of rows){
+      const ref=String(x?.ref||"").trim(),provider=String(x?.modelProvider||"").trim(),name=String(x?.name||"").trim();
+      if(!ref||seen.has(ref)) continue;
+      if(!/anthropic/i.test(provider)&&!/claude/i.test(name)&&!/claude/i.test(ref)) continue;
+      seen.add(ref);
+      models.push({id:ref,name:name||ref,provider:provider||"Anthropic",description:String(x?.modelDescription||""),namespace:g.full_path||g.name||String(g.id)});
+    }
   }
-  if(!models.length) throw Error("GitLab returned no Anthropic Claude models for this account/namespace.");
+  if(!models.length) throw Error("GitLab did not return any Anthropic Claude models for the connected Duo namespaces.");
   s.models=models;
-  s.default_model=String(a?.defaultModel?.ref||models[0].id);
+  s.default_model=models.find(x=>/sonnet-4-6/i.test(x.id))?.id||models[0].id;
   return models;
 }
 function modelsFor(s){return Array.isArray(s?.models)?s.models:[]}
