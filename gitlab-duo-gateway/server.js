@@ -83,9 +83,17 @@ function publicUrl(req){return PUBLIC_URL||("https://"+req.headers.host)}
 function redirectUri(req){return publicUrl(req)+"/oauth/callback"}
 
 async function oauthCode(code,req){
- const rc=runtimeConfig(req);const f=new URLSearchParams({client_id:rc.client_id,client_secret:rc.client_secret,code,grant_type:"authorization_code",redirect_uri:redirectUri(req)});
- const r=await fetch(rc.gitlab_base+"/oauth/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded",accept:"application/json"},body:f});
- const d=await r.json().catch(()=>({}));if(!r.ok)throw Error("OAuth exchange failed: "+r.status+" "+JSON.stringify(d));return d;
+ const rc=runtimeConfig(req);const clientId=String(rc.client_id||"").trim(),clientSecret=String(rc.client_secret||"").trim();
+ const params={code,grant_type:"authorization_code",redirect_uri:redirectUri(req)};
+ let r=await fetch(rc.gitlab_base+"/oauth/token",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded",accept:"application/json"},body:new URLSearchParams({...params,client_id:clientId,client_secret:clientSecret})});
+ let d=await r.json().catch(()=>({}));
+ if(!r.ok&&r.status===401&&d?.error==="invalid_client"){
+   const basic=Buffer.from(clientId+":"+clientSecret).toString("base64");
+   r=await fetch(rc.gitlab_base+"/oauth/token",{method:"POST",headers:{authorization:"Basic "+basic,"content-type":"application/x-www-form-urlencoded",accept:"application/json"},body:new URLSearchParams(params)});
+   d=await r.json().catch(()=>({}));
+ }
+ if(!r.ok)throw Error("OAuth exchange failed: "+r.status+" "+JSON.stringify(d));
+ return d;
 }
 async function refresh(s){
  const rc={client_id:s.client_id||CLIENT_ID,client_secret:s.client_secret||CLIENT_SECRET};const f=new URLSearchParams({client_id:rc.client_id,client_secret:rc.client_secret,refresh_token:s.refresh_token,grant_type:"refresh_token",redirect_uri:s.redirect_uri});
