@@ -63,6 +63,12 @@ async function auth(req){
  const c=(req.headers.authorization||"").replace(/^Bearer\s+/i,"");if(!c)return null;
  try{const p=decrypt(c),s=sessions.get(p.sid);if(!s||s.revoked)return null;if(s.expires_at<Date.now()+60000)await refresh(s);return s}catch{return null}
 }
+async function anthropicRequest(s,payload){
+ const d=await directAccess(s);
+ const r=await fetch(AI_GATEWAY+"/ai/v1/proxy/anthropic/v1/messages",{method:"POST",headers:{...d.headers,"content-type":"application/json","accept":"application/json","anthropic-version":"2023-06-01","x-api-key":d.token},body:JSON.stringify(payload)});
+ const text=await r.text(); let data; try{data=JSON.parse(text)}catch{data={raw:text}}; return {status:r.status,data};
+}
+function textFromAnthropic(data){return data&&Array.isArray(data.content)?data.content.filter(x=>x.type==="text").map(x=>x.text).join(""):"";}
 async function proxy(req,res,s){
  const d=await direct(s), u=new URL(req.url,"http://local"), target=AI_GATEWAY+"/ai/v1/proxy/anthropic"+u.pathname;
  const headers={...d.headers,"content-type":req.headers["content-type"]||"application/json",accept:req.headers.accept||"application/json","anthropic-version":req.headers["anthropic-version"]||"2023-06-01","x-api-key":d.token};
@@ -106,7 +112,7 @@ const server=http.createServer(async(req,res)=>{
  try{
   const u=new URL(req.url,"http://"+(req.headers.host||"localhost"));
   if(u.pathname==="/health")return send(res,200,{ok:true,service:"gitlab-duo-gateway"});
-  if(u.pathname==="/api/status"&&req.method==="GET"){const s=await sessionFromRequest(req);return send(res,200,{configured:config(res),oauthConfigured:!!(CLIENT_ID&&CLIENT_SECRET),gatewayConfigured:!!GATEWAY_SECRET,connected:!!s,base_url:publicUrl(req),callback:redirectUri(req)});}
+  if(u.pathname==="/api/status"&&req.method==="GET"){const s=await sessionFromRequest(req);return send(res,200,{configured:configured(),oauthConfigured:!!(CLIENT_ID&&CLIENT_SECRET),gatewayConfigured:!!GATEWAY_SECRET,connected:!!s,base_url:publicUrl(req),callback:redirectUri(req)});}
   if(u.pathname==="/api/credential"&&req.method==="GET"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"GitLab Duo is not connected. Connect GitLab first."});const c=getCookie(req,"duo_session")||encrypt(s);return send(res,200,{credential:c,base_url:publicUrl(req),messages_url:publicUrl(req)+"/v1/messages",models:MODELS});}
   if(u.pathname==="/api/test"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"Connect GitLab before testing."});await directAccess(s);const d=await anthropicRequest(s,{model:"claude-sonnet-4-6",max_tokens:1,messages:[{role:"user",content:"ping"}]},false);if(d.status<200||d.status>=300)return send(res,502,{error:"GitLab Duo direct access works, but the Claude Messages test failed ("+d.status+").",details:d.data});return send(res,200,{ok:true,message:"OAuth, GitLab Duo direct access, AI Gateway and Claude Messages API are all working.",model:"claude-sonnet-4-6",preview:textFromAnthropic(d.data).slice(0,80)||"response received"});}
   if(u.pathname==="/api/playground"&&req.method==="POST"){const s=await sessionFromRequest(req);if(!s)return send(res,401,{error:"Connect GitLab first."});let p;try{p=JSON.parse((await readBody(req)).toString())}catch{return send(res,400,{error:"Invalid JSON"})}const model=MODELS.includes(p.model)?p.model:"claude-sonnet-4-6";const prompt=String(p.prompt||"").trim();if(!prompt)return send(res,400,{error:"Prompt is empty"});const d=await anthropicRequest(s,{model,max_tokens:1024,messages:[{role:"user",content:prompt}]},false);if(d.status<200||d.status>=300)return send(res,d.status,{error:"GitLab Duo request failed",details:d.data});return send(res,200,{ok:true,model,text:textFromAnthropic(d.data),raw:d.data});}
