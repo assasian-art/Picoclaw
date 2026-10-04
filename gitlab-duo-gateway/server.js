@@ -11,7 +11,7 @@ const PUBLIC_URL=(process.env.PUBLIC_URL||"").replace(/\/$/,"");
 const AI_GATEWAY=(process.env.AI_GATEWAY_URL||"https://cloud.gitlab.com").replace(/\/$/,"");
 
 const sessions=new Map(), directCache=new Map();
-const MODELS=["claude-sonnet-4-6","claude-sonnet-4-5-20250929","claude-sonnet-4-20250514","claude-opus-4-6","claude-opus-4-5-20251101","claude-haiku-4-5-20251001"];
+const DEFAULT_MODEL="claude-sonnet-4-6";
 
 const b64=b=>Buffer.from(b).toString("base64").replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
 const ub64=s=>Buffer.from(s.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-s.length%4)%4),"base64");
@@ -41,6 +41,29 @@ async function body(req){const a=[];for await(const c of req)a.push(c);return Bu
 function runtimeConfig(req){try{const raw=getCookie(req,"duo_config");if(raw)return decrypt(raw)}catch{}return {client_id:CLIENT_ID,client_secret:CLIENT_SECRET,gitlab_base:GITLAB_BASE}}
 function configured(){const c=runtimeConfig({headers:{cookie:""}});return !!(c.client_id&&c.client_secret&&GATEWAY_SECRET)}
 async function directAccess(s){return direct(s)}
+async function importGitLabModels(s){
+  const q={query:"query { aiChatAvailableModels { defaultModel { ref name modelProvider modelDescription } selectableModels { ref name modelProvider modelDescription } } }"};
+  const r=await fetch(s.gitlab_base+"/api/graphql",{method:"POST",headers:{authorization:"Bearer "+s.access_token,"content-type":"application/json",accept:"application/json"},body:JSON.stringify(q)});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||d.errors?.length) throw Error("GitLab model discovery failed: "+r.status+" "+JSON.stringify(d.errors||d));
+  const a=d?.data?.aiChatAvailableModels;
+  if(!a) throw Error("GitLab did not return Duo model catalog.");
+  const rows=[...(a.selectableModels||[]),...(a.defaultModel?[a.defaultModel]:[])];
+  const seen=new Set(), models=[];
+  for(const x of rows){
+    const ref=String(x?.ref||"").trim(), provider=String(x?.modelProvider||"").trim(), name=String(x?.name||"").trim();
+    if(!ref||seen.has(ref)) continue;
+    if(!/anthropic/i.test(provider)&&!/claude/i.test(name)&&!/claude/i.test(ref)) continue;
+    seen.add(ref);
+    models.push({id:ref,name:name||ref,provider:provider||"Anthropic",description:String(x?.modelDescription||"")});
+  }
+  if(!models.length) throw Error("GitLab returned no Anthropic Claude models for this account/namespace.");
+  s.models=models;
+  s.default_model=String(a?.defaultModel?.ref||models[0].id);
+  return models;
+}
+function modelsFor(s){return Array.isArray(s?.models)?s.models:[]}
+function modelIds(s){return modelsFor(s).map(x=>x.id)}
 async function sessionFromRequest(req,res){const raw=getCookie(req,"duo_session");if(!raw)return null;try{const p=decrypt(raw),s=sessions.get(p.sid);if(!s||s.revoked)return null;if(s.expires_at<Date.now()+60000)await refresh(s);return s}catch{return null}}
 async function readBody(req){return body(req)}
 
